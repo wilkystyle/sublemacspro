@@ -719,9 +719,8 @@ class SbpCenterViewCommand(SbpTextCommand):
     This command is frequently bound to Ctrl-l.
     '''
 
-    last_sel = None
-    last_scroll_type = None
-    last_visible_region = None
+    last_row = None
+    scroll_func_num = None
     scroll_functions = [
         "scroll_center",
         "scroll_top",
