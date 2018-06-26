@@ -707,7 +707,6 @@ class SbpShiftRegionCommand(SbpTextCommand):
 def enum(**enums):
     return type('Enum', (), enums)
 
-SCROLL_TYPES = enum(TOP=1, CENTER=0, BOTTOM=2)
 
 class SbpCenterViewCommand(SbpTextCommand):
     '''
@@ -723,11 +722,50 @@ class SbpCenterViewCommand(SbpTextCommand):
     last_sel = None
     last_scroll_type = None
     last_visible_region = None
+    scroll_functions = [
+        "scroll_center",
+        "scroll_top",
+        "scroll_bottom"
+    ]
 
-    def rowdiff(self, start, end):
-        r1,c1 = self.view.rowcol(start)
-        r2,c2 = self.view.rowcol(end)
-        return r2 - r1
+    def scroll_center(self):
+        self.view.show_at_center(self.current_point)
+
+    def scroll_top(self):
+        top_row = self.view.rowcol(self.view.visible_region().a)[0]
+        scroll_amount = top_row - self.last_row
+        self.view.window().run_command(
+            "scroll_lines",
+            {"amount": scroll_amount}
+        )
+
+        # Did we over-scroll? If so, move the cursor up one line to fix it.
+        current_selection_end = self.view.sel()[0].b
+        current_row = self.view.rowcol(current_selection_end)[0]
+        if current_row != self.last_row:
+            self.view.window().run_command(
+                "move",
+                {"by": "lines", "forward": False}
+            )
+
+    def scroll_bottom(self):
+        scroll_amount = int(
+            self.view.viewport_extent()[1] / self.view.line_height()
+        )
+
+        self.view.window().run_command(
+            "scroll_lines",
+            {"amount": scroll_amount}
+        )
+
+        # Did we under-scroll? If so, move the cursor down one line to fix it.
+        current_selection_end = self.view.sel()[0].b
+        current_row = self.view.rowcol(current_selection_end)[0]
+        if current_row != self.last_row:
+            self.view.window().run_command(
+                "move",
+                {"by": "lines", "forward": True}
+            )
 
     def run_cmd(self, util, center_only=False):
         view = self.view
@@ -744,30 +782,20 @@ class SbpCenterViewCommand(SbpTextCommand):
             self.cycle_center_view(view.sel()[0])
 
     def cycle_center_view(self, start):
-        if start != SbpCenterViewCommand.last_sel:
-            SbpCenterViewCommand.last_visible_region = None
-            SbpCenterViewCommand.last_scroll_type = SCROLL_TYPES.CENTER
-            SbpCenterViewCommand.last_sel = start
-            self.view.show_at_center(SbpCenterViewCommand.last_sel)
-            return
+        current_selection_end = start.b
+        current_row = self.view.rowcol(current_selection_end)[0]
+
+        if current_row == self.last_row:
+            self.scroll_func_num = (self.scroll_func_num + 1) % 3
         else:
-            SbpCenterViewCommand.last_scroll_type = (SbpCenterViewCommand.last_scroll_type + 1) % 3
+            self.scroll_func_num = 0
 
-        SbpCenterViewCommand.last_sel = start
-        if SbpCenterViewCommand.last_visible_region == None:
-            SbpCenterViewCommand.last_visible_region = self.view.visible_region()
+        self.last_row = current_row
+        self.current_point = current_selection_end
+        function_name = self.scroll_functions[self.scroll_func_num]
+        f = getattr(self, function_name)
+        f()
 
-        # Now Scroll to position
-        if SbpCenterViewCommand.last_scroll_type == SCROLL_TYPES.CENTER:
-            self.view.show_at_center(SbpCenterViewCommand.last_sel)
-        elif SbpCenterViewCommand.last_scroll_type == SCROLL_TYPES.TOP:
-            row,col = self.view.rowcol(SbpCenterViewCommand.last_visible_region.end())
-            diff = self.rowdiff(SbpCenterViewCommand.last_visible_region.begin(), SbpCenterViewCommand.last_sel.begin())
-            self.view.show(self.view.text_point(row + diff-2, 0), False)
-        elif SbpCenterViewCommand.last_scroll_type == SCROLL_TYPES.BOTTOM:
-            row, col = self.view.rowcol(SbpCenterViewCommand.last_visible_region.begin())
-            diff = self.rowdiff(SbpCenterViewCommand.last_sel.begin(), SbpCenterViewCommand.last_visible_region.end())
-            self.view.show(self.view.text_point(row - diff+2, 0), False)
 
 class SbpSetMarkCommand(SbpTextCommand):
     def run_cmd(self, util):
